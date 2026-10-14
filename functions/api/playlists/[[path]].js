@@ -6,6 +6,8 @@ const json = (data, status = 200) =>
     });
 
 export async function onRequest({ request, env, params }) {
+    const expectedToken = env.PLAYLIST_TOKEN;
+    if (!expectedToken || request.headers.get('X-Playlist-Token') !== expectedToken) return json({ error: 'Unauthorized' }, 401);
     const db = env.DB;
     if (!db) return json({ error: "D1 database not bound" }, 500);
 
