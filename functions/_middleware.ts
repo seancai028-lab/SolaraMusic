@@ -66,7 +66,14 @@ async function authMiddleware(context: any) {
   });
 
   if (cookies.auth && cookies.auth === btoa(password)) {
-    return context.next();
+    // Refresh the persistent login on every authenticated request.
+    // The browser retains it while it continues to visit within the 400-day window.
+    const response = await context.next();
+    const headers = new Headers(response.headers);
+    const cookie = [`auth=${btoa(password)}`, `Max-Age=${400 * 24 * 60 * 60}`, "Path=/", "SameSite=Lax", "HttpOnly"];
+    if (url.protocol === "https:") cookie.push("Secure");
+    headers.append("Set-Cookie", cookie.join("; "));
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
 
   // API 路由未授权时返回 401 JSON，杜绝返回 HTML 重定向导致前端 JSON 解析崩溃
