@@ -645,7 +645,9 @@ export async function togglePlayPause() {
         return;
     }
 
-    if (!dom.audioPlayer.src) {
+    // A cleared <audio src=""> resolves .src to the page URL, which is truthy.
+    // Pending tracks must resolve a fresh audio URL instead of calling play() on an empty source.
+    if (!dom.audioPlayer.getAttribute("src") || !state.currentAudioUrl) {
         try {
             await playSong(state.currentSong, {
                 autoplay: true,
@@ -1694,6 +1696,31 @@ export async function bootstrap() {
             });
         }
     }
+
+    // Apply a named playlist after remote state restoration.
+    try {
+        const pending = sessionStorage.getItem("solara_pending_playlist");
+        if (pending) {
+            const selection = JSON.parse(pending);
+            if (Array.isArray(selection.songs) && selection.songs.length > 0) {
+                state.playlistSongs = selection.songs;
+                state.currentTrackIndex = 0;
+                state.currentPlaylist = "playlist";
+                state.currentList = "playlist";
+                state.currentSong = selection.songs[0];
+                state.currentPlaybackTime = 0;
+                savePlayerState();
+                renderPlaylist(state, dom, getPlaylistCallbacks());
+                updateCurrentSongInfo(state.currentSong, { loadArtwork: true });
+                updatePlaylistHighlight(state, dom);
+                updatePlayPauseButton(dom);
+                sessionStorage.removeItem("solara_pending_playlist");
+            }
+        }
+    } catch (error) {
+        console.error("Named playlist switch failed:", error);
+    }
+
 }
 
 // 当 DOM 就绪时启动应用

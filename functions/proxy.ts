@@ -127,14 +127,66 @@ async function proxyApiRequest(url: URL, request: Request, waitUntil?: (promise:
     return new Response("Missing types", { status: 400 });
   }
 
-  const upstream = await fetch(apiUrl.toString(), {
-    headers: {
-      "User-Agent": "Meting/1.5.0",
-      "Accept": "application/json",
-    },
-  });
+  let upstream: Response;
+  let retryStatus: number | null = null;
+  let fallbackStatus: number | null = null;
+  let fallbackHost: string | null = null;
+  try {
+    upstream = await fetch(apiUrl.toString(), {
+      headers: {
+        "User-Agent": "Meting/1.5.0",
+        "Accept": "application/json",
+      },
+    });
+    if (upstream.status === 520) {
+      // A single controlled retry tests whether upstream filtering depends on request headers.
+      const retry = await fetch(apiUrl.toString(), {
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        },
+      });
+      retryStatus = retry.status;
+      upstream = retry;
+      if (retry.status === 520) {
+        // Test the original GDStudio domain only after both requests to the developer API fail.
+        const fallbackUrl = new URL(apiUrl.toString());
+        fallbackUrl.hostname = "music.gdstudio.xyz";
+        fallbackHost = fallbackUrl.hostname;
+        try {
+          const fallback = await fetch(fallbackUrl.toString(), {
+            headers: { "Accept": "application/json" },
+          });
+          fallbackStatus = fallback.status;
+          upstream = fallback;
+        } catch (fallbackError) {
+          const reason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          console.error("[Solara proxy] Fallback fetch failed", { host: fallbackHost, reason });
+          return new Response(JSON.stringify({ error: "fallback_fetch_failed", upstream_status: 520, retry_status: retryStatus, fallback_host: fallbackHost, detail: reason }), {
+            status: 502,
+            headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[Solara proxy] Upstream fetch failed", { host: apiUrl.hostname, message });
+    return new Response(JSON.stringify({ error: "upstream_fetch_failed", upstream_host: apiUrl.hostname, detail: message }), {
+      status: 502,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+    });
+  }
 
   const responseText = await upstream.text();
+  if (!upstream.ok) {
+    console.error("[Solara proxy] Upstream HTTP error", { host: apiUrl.hostname, status: upstream.status, body: responseText.slice(0, 300) });
+    return new Response(JSON.stringify({ error: "upstream_http_error", upstream_host: apiUrl.hostname, upstream_status: upstream.status, retry_status: retryStatus, fallback_host: fallbackHost, fallback_status: fallbackStatus, detail: responseText.slice(0, 300) }), {
+      status: 502,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+    });
+  }
   const headers = createCorsHeaders(upstream.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json; charset=utf-8");

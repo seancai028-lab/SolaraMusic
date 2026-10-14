@@ -32,12 +32,18 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
+const COOKIE_TTL = 400 * 24 * 60 * 60;
+async function signToken(password: string, timestamp: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(timestamp)));
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
 async function authMiddleware(context: any) {
   const { request, env } = context;
   const password = env.PASSWORD;
 
-  if (typeof password !== "string") {
-    return context.next();
+  if (typeof password !== "string" || !password) {
+    return new Response(JSON.stringify({ error: "Server authentication is not configured" }), { status: 503, headers: { "Content-Type": "application/json" } });
   }
 
   const url = new URL(request.url);
@@ -65,8 +71,17 @@ async function authMiddleware(context: any) {
     }
   });
 
-  if (cookies.auth && cookies.auth === btoa(password)) {
-    return context.next();
+  const [issuedAt, signature] = (cookies.auth || "").split(".");
+  const issued = Number(issuedAt);
+  const validTime = /^\\d+$/.test(issuedAt || "") && Number.isSafeInteger(issued) && issued <= Math.floor(Date.now() / 1000) && issued > Math.floor(Date.now() / 1000) - COOKIE_TTL;
+  if (validTime && signature && signature === await signToken(password, issuedAt)) {
+    const response = await context.next();
+    const headers = new Headers(response.headers);
+    const now = String(Math.floor(Date.now() / 1000));
+    const cookie = [`auth=${now}.${await signToken(password, now)}`, `Max-Age=${COOKIE_TTL}`, "Path=/", "SameSite=Lax", "HttpOnly"];
+    if (url.protocol === "https:") cookie.push("Secure");
+    headers.append("Set-Cookie", cookie.join("; "));
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
 
   // API 路由未授权时返回 401 JSON，杜绝返回 HTML 重定向导致前端 JSON 解析崩溃
