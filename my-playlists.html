@@ -5,7 +5,7 @@
 </style></head><body><main>
 <a href="/">← 返回播放器</a><h1>我的歌单</h1>
 
-<section id="manager"><div class="toolbar"><button class="primary" id="create">＋ 新建歌单</button><button id="refresh">刷新</button></div><div id="list"></div><section id="detail" class="hidden"><h2 id="title"></h2><p id="count" class="muted"></p><div class="toolbar"><button id="import" class="primary">导入 JSON</button><button id="export">导出 JSON</button><button id="back">返回歌单列表</button></div><input class="hidden" type="file" id="file" accept=".json,application/json"><div id="songs"></div></section></section><div id="status" role="status"></div>
+<section id="manager"><div class="toolbar"><button class="primary" id="create">＋ 新建歌单</button><button id="refresh">刷新</button></div><div id="list"></div><section id="detail" class="hidden"><h2 id="title"></h2><p id="count" class="muted"></p><div class="toolbar"><button id="play" class="primary">▶ 切换到此歌单</button><button id="import">导入 JSON</button><button id="export">导出 JSON</button><button id="back">返回歌单列表</button></div><input class="hidden" type="file" id="file" accept=".json,application/json"><div id="songs"></div></section></section><div id="status" role="status"></div>
 </main><script type="module">
 let active=null,songs=[];
 const $=id=>document.getElementById(id),show=(id,on)=>$(id).classList.toggle("hidden",!on),status=s=>$("status").textContent=s;
@@ -20,6 +20,7 @@ $("create").onclick=()=>perform(async()=>{const name=prompt("新歌单名称");i
 $("refresh").onclick=()=>perform(loadLists);$("back").onclick=()=>perform(loadLists);
 $("import").onclick=()=>$("file").click();
 $("file").onchange=()=>perform(async()=>{const f=$("file").files[0];if(!f)return;const d=JSON.parse(await f.text());const items=Array.isArray(d)?d:Array.isArray(d.songs)?d.songs:Array.isArray(d.items)?d.items:Array.isArray(d.playlistSongs)?d.playlistSongs:null;if(!items)throw Error("JSON 中未找到歌曲数组");for(let i=0;i<items.length;i+=50){await api("/"+encodeURIComponent(active.id)+"/songs","POST",{songs:items.slice(i,i+50)});status("导入进度："+Math.min(i+50,items.length)+"/"+items.length)}$("file").value="";await loadSongs();status("导入完成")});
+$("play").onclick=()=>perform(async()=>{if(!songs.length)throw Error("歌单没有歌曲");sessionStorage.setItem("solara_pending_playlist",JSON.stringify({id:active.id,name:active.name,songs}));location.href="/"});
 $("export").onclick=()=>{const blob=new Blob([JSON.stringify(songs,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(active?.name||"playlist")+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 perform(loadLists);
 </script></body></html>
