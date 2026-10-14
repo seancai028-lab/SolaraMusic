@@ -682,6 +682,79 @@
         document.body.appendChild(mobileScript);
     }
 </script>
-<a href="/my-playlists.html" aria-label="管理我的歌单" style="position:fixed;right:16px;bottom:88px;z-index:9999;background:#536fe4;color:#fff;padding:11px 15px;border-radius:28px;text-decoration:none;font:600 14px system-ui,sans-serif;box-shadow:0 4px 18px #0006">♫ 我的歌单</a>
+<a id="floatingPlaylistsBtn" href="/my-playlists.html" aria-label="管理我的歌单，按住可拖动" style="position:fixed;right:16px;bottom:88px;z-index:9999;background:#536fe4;color:#fff;padding:11px 15px;border-radius:28px;text-decoration:none;font:600 14px system-ui,sans-serif;box-shadow:0 4px 18px #0006;touch-action:none;user-select:none;-webkit-user-select:none">♫ 我的歌单</a>
+<script>
+(() => {
+  const button = document.getElementById('floatingPlaylistsBtn');
+  const key = 'solara-floating-playlists-position';
+  const margin = 8;
+  let startX = 0, startY = 0, originX = 0, originY = 0, moved = false, dragging = false, suppressClick = false;
+  function clamp(x, y) {
+    const viewport = window.visualViewport;
+    const left = viewport ? viewport.offsetLeft : 0;
+    const top = viewport ? viewport.offsetTop : 0;
+    const width = viewport ? viewport.width : window.innerWidth;
+    const height = viewport ? viewport.height : window.innerHeight;
+    return {
+      x: Math.max(left + margin, Math.min(x, left + width - button.offsetWidth - margin)),
+      y: Math.max(top + margin, Math.min(y, top + height - button.offsetHeight - margin))
+    };
+  }
+  function place(x, y) {
+    const p = clamp(x, y);
+    button.style.left = p.x + 'px';
+    button.style.top = p.y + 'px';
+    button.style.right = 'auto';
+    button.style.bottom = 'auto';
+    return p;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(key));
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      place(saved.x * window.innerWidth, saved.y * window.innerHeight);
+    }
+  } catch (_) {}
+  button.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const rect = button.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    originX = rect.left;
+    originY = rect.top;
+    moved = false;
+    dragging = true;
+    button.setPointerCapture(e.pointerId);
+  });
+  button.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!moved && Math.hypot(dx, dy) < 6) return;
+    moved = true;
+    place(originX + dx, originY + dy);
+  });
+  function finish(e) {
+    if (!dragging) return;
+    dragging = false;
+    if (button.hasPointerCapture(e.pointerId)) button.releasePointerCapture(e.pointerId);
+    if (!moved) return;
+    suppressClick = true;
+    const rect = button.getBoundingClientRect();
+    try { localStorage.setItem(key, JSON.stringify({x: rect.left / window.innerWidth, y: rect.top / window.innerHeight})); } catch (_) {}
+  }
+  button.addEventListener('pointerup', finish);
+  button.addEventListener('pointercancel', finish);
+  button.addEventListener('click', e => {
+    if (!suppressClick) return;
+    e.preventDefault();
+    suppressClick = false;
+  }, true);
+  window.addEventListener('resize', () => {
+    if (button.style.left) {
+      const rect = button.getBoundingClientRect();
+      place(rect.left, rect.top);
+    }
+  });
+})();
+</script>
 </body>
 </html>
