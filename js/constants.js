@@ -102,7 +102,8 @@ export const themeDefaults = {
  * 核心后端 API 代理接口
  */
 export const API = {
-    baseUrl: "/proxy",
+    // Browser-to-GDStudio requests work; Cloudflare-origin proxy requests currently fail.
+    baseUrl: "https://music-api.gdstudio.xyz/api.php",
 
     generateSignature: () => {
         return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
