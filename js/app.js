@@ -645,7 +645,9 @@ export async function togglePlayPause() {
         return;
     }
 
-    if (!dom.audioPlayer.src) {
+    // A cleared <audio src=""> resolves .src to the page URL, which is truthy.
+    // Pending tracks must resolve a fresh audio URL instead of calling play() on an empty source.
+    if (!dom.audioPlayer.getAttribute("src") || !state.currentAudioUrl) {
         try {
             await playSong(state.currentSong, {
                 autoplay: true,
