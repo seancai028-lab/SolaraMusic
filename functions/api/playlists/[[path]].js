@@ -9,6 +9,17 @@ export async function onRequest({ request, env, params }) {
     const db = env.DB;
     if (!db) return json({ error: "D1 database not bound" }, 500);
 
+    // Initialize the two playlist tables on first use, like /api/storage does.
+    // The Cloudflare Pages project still needs a D1 binding named DB.
+    try {
+        await db.batch([
+            db.prepare("CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+            db.prepare("CREATE TABLE IF NOT EXISTS playlist_songs (playlist_id TEXT NOT NULL, song_id TEXT NOT NULL, source TEXT NOT NULL, song_data TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (playlist_id, source, song_id), FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE)")
+        ]);
+    } catch (error) {
+        return json({ error: "D1 schema initialization failed", detail: String(error?.message || error) }, 500);
+    }
+
     const segments = (params.path || [])
         .filter(Boolean)
         .map(decodeURIComponent);
@@ -88,11 +99,14 @@ export async function onRequest({ request, env, params }) {
                     return json({ error: "无效歌曲数据" }, 400);
                 }
 
+                const existing = await db.prepare("SELECT id FROM playlists WHERE id=?").bind(id).first();
+                if (!existing) return json({ error: "歌单不存在" }, 404);
+
                 const count = await db.prepare(
                     "SELECT COALESCE(MAX(position), -1) AS last FROM playlist_songs WHERE playlist_id=?"
                 ).bind(id).first();
 
-                let position = count.last + 1;
+                let position = Number(count?.last ?? -1) + 1;
 
                 const statements = songs.map(song => {
                     const source = String(song.source || "netease");
