@@ -1,4 +1,4 @@
-const MAX_AGE_SECONDS = 48 * 60 * 60;
+const MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 
 export async function onRequestPost(context: any) {
   const { request, env } = context;
