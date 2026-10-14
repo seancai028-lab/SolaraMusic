@@ -127,14 +127,31 @@ async function proxyApiRequest(url: URL, request: Request, waitUntil?: (promise:
     return new Response("Missing types", { status: 400 });
   }
 
-  const upstream = await fetch(apiUrl.toString(), {
-    headers: {
-      "User-Agent": "Meting/1.5.0",
-      "Accept": "application/json",
-    },
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(apiUrl.toString(), {
+      headers: {
+        "User-Agent": "Meting/1.5.0",
+        "Accept": "application/json",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[Solara proxy] Upstream fetch failed", { host: apiUrl.hostname, message });
+    return new Response(JSON.stringify({ error: "upstream_fetch_failed", upstream_host: apiUrl.hostname, detail: message }), {
+      status: 502,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+    });
+  }
 
   const responseText = await upstream.text();
+  if (!upstream.ok) {
+    console.error("[Solara proxy] Upstream HTTP error", { host: apiUrl.hostname, status: upstream.status, body: responseText.slice(0, 300) });
+    return new Response(JSON.stringify({ error: "upstream_http_error", upstream_host: apiUrl.hostname, upstream_status: upstream.status, detail: responseText.slice(0, 300) }), {
+      status: 502,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+    });
+  }
   const headers = createCorsHeaders(upstream.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json; charset=utf-8");
