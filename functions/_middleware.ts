@@ -73,7 +73,7 @@ async function authMiddleware(context: any) {
 
   const [issuedAt, signature] = (cookies.auth || "").split(".");
   const issued = Number(issuedAt);
-  const validTime = /^\\d+$/.test(issuedAt || "") && Number.isSafeInteger(issued) && issued <= Math.floor(Date.now() / 1000) && issued > Math.floor(Date.now() / 1000) - COOKIE_TTL;
+  const validTime = /^\d+$/.test(issuedAt || "") && Number.isSafeInteger(issued) && issued <= Math.floor(Date.now() / 1000) && issued > Math.floor(Date.now() / 1000) - COOKIE_TTL;
   if (validTime && signature && signature === await signToken(password, issuedAt)) {
     const response = await context.next();
     const headers = new Headers(response.headers);
