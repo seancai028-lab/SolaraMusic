@@ -129,6 +129,8 @@ async function proxyApiRequest(url: URL, request: Request, waitUntil?: (promise:
 
   let upstream: Response;
   let retryStatus: number | null = null;
+  let fallbackStatus: number | null = null;
+  let fallbackHost: string | null = null;
   try {
     upstream = await fetch(apiUrl.toString(), {
       headers: {
@@ -147,6 +149,26 @@ async function proxyApiRequest(url: URL, request: Request, waitUntil?: (promise:
       });
       retryStatus = retry.status;
       upstream = retry;
+      if (retry.status === 520) {
+        // Test the original GDStudio domain only after both requests to the developer API fail.
+        const fallbackUrl = new URL(apiUrl.toString());
+        fallbackUrl.hostname = "music.gdstudio.xyz";
+        fallbackHost = fallbackUrl.hostname;
+        try {
+          const fallback = await fetch(fallbackUrl.toString(), {
+            headers: { "Accept": "application/json" },
+          });
+          fallbackStatus = fallback.status;
+          upstream = fallback;
+        } catch (fallbackError) {
+          const reason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          console.error("[Solara proxy] Fallback fetch failed", { host: fallbackHost, reason });
+          return new Response(JSON.stringify({ error: "fallback_fetch_failed", upstream_status: 520, retry_status: retryStatus, fallback_host: fallbackHost, detail: reason }), {
+            status: 502,
+            headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+          });
+        }
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -160,7 +182,7 @@ async function proxyApiRequest(url: URL, request: Request, waitUntil?: (promise:
   const responseText = await upstream.text();
   if (!upstream.ok) {
     console.error("[Solara proxy] Upstream HTTP error", { host: apiUrl.hostname, status: upstream.status, body: responseText.slice(0, 300) });
-    return new Response(JSON.stringify({ error: "upstream_http_error", upstream_host: apiUrl.hostname, upstream_status: upstream.status, retry_status: retryStatus, detail: responseText.slice(0, 300) }), {
+    return new Response(JSON.stringify({ error: "upstream_http_error", upstream_host: apiUrl.hostname, upstream_status: upstream.status, retry_status: retryStatus, fallback_host: fallbackHost, fallback_status: fallbackStatus, detail: responseText.slice(0, 300) }), {
       status: 502,
       headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
     });
