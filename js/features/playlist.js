@@ -205,29 +205,25 @@ export function updatePlaylistHighlight(state, dom) {
         item.setAttribute("aria-pressed", isCurrent ? "true" : "false");
     });
 
-    // Follow actual track changes, not routine highlight refreshes.
-    // Only scroll the playlist container, leaving the page and song order untouched.
+    // Keep the active song centered inside the actual playlist-scroll viewport.
+    // Do not reorder tracks or move the page itself.
     const currentKey = targetIndex >= 0 ? getSongKey(state.playlistSongs[targetIndex]) : null;
     const scrollKey = currentKey ? `${targetIndex}:${currentKey}` : null;
+    const viewport = dom.playlistItems.closest(".playlist-scroll");
+    if (!viewport || !scrollKey) {
+        dom.playlistItems.__solaraLastFocusedTrack = scrollKey;
+        return;
+    }
     if (dom.playlistItems.__solaraLastFocusedTrack === scrollKey) return;
     dom.playlistItems.__solaraLastFocusedTrack = scrollKey;
-    if (!scrollKey) return;
     const activeItem = items[targetIndex];
     if (!activeItem) return;
-    const scrollContainer = dom.playlistItems;
     requestAnimationFrame(() => {
-        if (scrollContainer.__solaraLastFocusedTrack !== scrollKey || !activeItem.isConnected) return;
+        if (dom.playlistItems.__solaraLastFocusedTrack !== scrollKey || !activeItem.isConnected) return;
         const itemRect = activeItem.getBoundingClientRect();
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const delta = itemRect.top + itemRect.height / 2 - containerRect.top - containerRect.height / 2;
-        // Find the nearest scrollable playlist ancestor (the items wrapper may not scroll itself).
-        let scroller = scrollContainer;
-        while (scroller && scroller !== document.body && scroller !== document.documentElement) {
-            if (scroller.scrollHeight > scroller.clientHeight + 2 && getComputedStyle(scroller).overflowY !== "visible") break;
-            scroller = scroller.parentElement;
-        }
-        if (!scroller || scroller === document.body || scroller === document.documentElement) return;
-        scroller.scrollTop += delta;
+        const viewportRect = viewport.getBoundingClientRect();
+        const offset = itemRect.top + itemRect.height / 2 - viewportRect.top - viewportRect.height / 2;
+        viewport.scrollTop += offset;
     });
 }
 
