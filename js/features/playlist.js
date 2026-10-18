@@ -204,6 +204,31 @@ export function updatePlaylistHighlight(state, dom) {
         item.setAttribute("aria-current", isCurrent ? "true" : "false");
         item.setAttribute("aria-pressed", isCurrent ? "true" : "false");
     });
+
+    // Follow actual track changes, not routine highlight refreshes.
+    // Only scroll the playlist container, leaving the page and song order untouched.
+    const currentKey = targetIndex >= 0 ? getSongKey(state.playlistSongs[targetIndex]) : null;
+    const scrollKey = currentKey ? `${targetIndex}:${currentKey}` : null;
+    if (dom.playlistItems.__solaraLastFocusedTrack === scrollKey) return;
+    dom.playlistItems.__solaraLastFocusedTrack = scrollKey;
+    if (!scrollKey) return;
+    const activeItem = items[targetIndex];
+    if (!activeItem) return;
+    const scrollContainer = dom.playlistItems;
+    requestAnimationFrame(() => {
+        if (scrollContainer.__solaraLastFocusedTrack !== scrollKey || !activeItem.isConnected) return;
+        const itemRect = activeItem.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const delta = itemRect.top + itemRect.height / 2 - containerRect.top - containerRect.height / 2;
+        // Find the nearest scrollable playlist ancestor (the items wrapper may not scroll itself).
+        let scroller = scrollContainer;
+        while (scroller && scroller !== document.body && scroller !== document.documentElement) {
+            if (scroller.scrollHeight > scroller.clientHeight + 2 && getComputedStyle(scroller).overflowY !== "visible") break;
+            scroller = scroller.parentElement;
+        }
+        if (!scroller || scroller === document.body || scroller === document.documentElement) return;
+        scroller.scrollTop += delta;
+    });
 }
 
 export function renderPlaylist(state, dom, callbacks = {}) {
