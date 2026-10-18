@@ -402,7 +402,7 @@ function getAudioCallbacks() {
                 attemptPaletteApplication(state, dom);
             };
             if (playPromise && typeof playPromise.finally === "function") {
-                playPromise.finally(run);
+                playPromise.then(run, run);
             } else {
                 run();
             }
