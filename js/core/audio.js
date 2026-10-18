@@ -265,6 +265,48 @@ export function waitForAudioReady(player) {
 }
 
 let currentPlaybackToken = 0;
+// Failed-track recovery is bounded to the active queue so unavailable songs cannot loop forever.
+let failedQueue = new Set();
+let failureQueueKey = "";
+function getRecoveryQueue(state) {
+    if (state.currentList === "favorite") return ensureFavoriteSongsArray(state);
+    if (state.currentPlaylist === "playlist") return state.playlistSongs || [];
+    if (state.currentPlaylist === "online") return state.onlineSongs || [];
+    if (state.currentPlaylist === "search") return state.searchResults || [];
+    return [];
+}
+function recoverFailedTrack(song, state, dom, callbacks, token) {
+    if (token !== currentPlaybackToken) return;
+    const queue = getRecoveryQueue(state);
+    const queueKey = (state.currentList === "favorite" ? "favorite" : state.currentPlaylist) + ":" + queue.map(getSongKey).join("|");
+    if (failureQueueKey !== queueKey) {
+        failureQueueKey = queueKey;
+        failedQueue.clear();
+    }
+    failedQueue.add(getSongKey(song));
+    const available = queue.map((item, index) => ({ item, index })).filter(({item}) => !failedQueue.has(getSongKey(item)));
+    if (!available.length) {
+        showNotification("当前歌单的歌曲均无法播放，已停止自动跳过", "error", dom);
+        failedQueue.clear();
+        return;
+    }
+    const mode = getActivePlayMode(state);
+    const currentIndex = state.currentList === "favorite" ? state.currentFavoriteIndex : state.currentTrackIndex;
+    const chosen = mode === "random"
+        ? available[Math.floor(Math.random() * available.length)]
+        : available.find(({index}) => index > currentIndex) || available[0];
+    showNotification("当前歌曲无法播放，正在尝试下一首", "info", dom);
+    if (state.currentList === "favorite") {
+        state.currentFavoriteIndex = chosen.index;
+        callbacks.playFavoriteSong?.(chosen.index);
+    } else {
+        state.currentTrackIndex = chosen.index;
+        const fn = state.currentPlaylist === "playlist" ? callbacks.playPlaylistSong
+            : state.currentPlaylist === "online" ? callbacks.playOnlineSong : callbacks.playSearchResult;
+        fn?.(chosen.index);
+    }
+}
+
 
 export function cancelPendingPlayback() {
     currentPlaybackToken++;
@@ -407,19 +449,17 @@ export async function playSong(song, options = {}, state, dom, callbacks = {}, d
         if (autoplay) {
             playPromise = dom.audioPlayer.play();
             if (playPromise !== undefined) {
-                playPromise.catch(async error => {
-                    console.error('播放失败:', error);
-                    log(`[音频异常] 播放失败: ${error?.message || error}`);
-                    if (!isRetry) {
-                        try {
-                            await playSong(song, { ...options, isRetry: true }, state, dom, callbacks, debugLogger);
-                        } catch (retryError) {
-                            showNotification('播放失败，请检查网络连接', 'error', dom);
-                        }
-                    } else {
-                        showNotification('播放失败，请检查网络连接', 'error', dom);
+                try {
+                    await playPromise;
+                    if (myToken === currentPlaybackToken) {
+                        failedQueue.clear();
+                        failureQueueKey = "";
                     }
-                });
+                } catch (error) {
+                    if (myToken !== currentPlaybackToken) return;
+                    log(`[音频异常] 播放失败: ${error?.message || error}`);
+                    throw error;
+                }
             }
         } else {
             dom.audioPlayer.pause();
@@ -436,8 +476,13 @@ export async function playSong(song, options = {}, state, dom, callbacks = {}, d
         }
     } catch (error) {
         console.error('播放歌曲失败:', error);
+        if (myToken !== currentPlaybackToken) return;
         if (!isRetry) {
             return playSong(song, { ...options, isRetry: true }, state, dom, callbacks, debugLogger);
+        }
+        if (autoplay) {
+            recoverFailedTrack(song, state, dom, callbacks, myToken);
+            return;
         }
         throw error;
     } finally {
