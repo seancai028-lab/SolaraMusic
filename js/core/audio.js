@@ -448,10 +448,6 @@ export async function playSong(song, options = {}, state, dom, callbacks = {}, d
 }
 
 export function autoPlayNext(state, dom, callbacks = {}) {
-    if (dom.audioPlayer && dom.audioPlayer.__solaraMediaSessionHandledEnded === 'skip') {
-        dom.audioPlayer.__solaraMediaSessionHandledEnded = false;
-        return;
-    }
     const mode = getActivePlayMode(state);
     if (mode === "single") {
         dom.audioPlayer.currentTime = 0;
